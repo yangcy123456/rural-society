@@ -1,60 +1,60 @@
-import matplotlib.pyplot as plt
-import numpy as np
+import os
+import sys
+
+# 确保 src 目录在路径中 (如果在某些 IDE 运行需要)
+if 'src' not in sys.path:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from src.model import RuralVillageModel
 from src.utils.yaml_loader import config
+# 导入可视化模块 (对应 src/visualize.py)
+import src.visualize as visualize
 
-PERSONALITY_DIMS = config["PERSONALITY_DIMS"]
-
-def plot_personality_distribution(model, step):
-    """绘制全村人格维度均值柱状图 (适配 Mesa 4.0)"""
-    data = {dim: [] for dim in PERSONALITY_DIMS}
+def run_simulation():
+    print("=== 乡土社会多智能体模拟器启动 ===")
     
-    # ✅ 修改点：从 model.agents 获取智能体
-    # Mesa 4.0 中 model.agents 通常是一个字典 {id: agent}，我们需要遍历 values()
-    # 如果 model.agents 是集合或列表，则直接遍历
-    agents = list(model.agents.values()) if isinstance(model.agents, dict) else list(model.agents)
-    
-    if not agents:
-        print("警告：未找到任何智能体，无法绘制分布图。")
-        return
+    # [1. 开头自动建 outputs 文件夹]
+    output_dir = "outputs"
+    os.makedirs(output_dir, exist_ok=True)
+    print(f"输出目录已确认: ./{output_dir}/")
 
-    for agent in agents:
-        for dim in PERSONALITY_DIMS:
-            # 确保 agent 有 personality 属性
-            if hasattr(agent, 'personality') and dim in agent.personality:
-                data[dim].append(agent.personality[dim])
-            else:
-                data[dim].append(0.0) # 默认值
-    
-    # 计算均值，防止空列表报错
-    means = [np.mean(data[dim]) if data[dim] else 0.0 for dim in PERSONALITY_DIMS]
+    model = RuralVillageModel()
+    steps = config["SIMULATION_STEPS"]
 
-    plt.figure(figsize=(10, 5)) # 稍微加宽一点
-    plt.bar(PERSONALITY_DIMS, means, color=['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd'])
-    plt.ylim(-1, 1)
-    plt.title(f"第 {step} 年 村民人格均值分布")
-    plt.ylabel("平均得分 (-1 ~ 1)")
-    plt.grid(axis='y', linestyle='--', alpha=0.3)
-    plt.tight_layout()
-    plt.show()
+    print(f"开始模拟，共 {steps} 年...")
 
-def plot_personality_evolution(history):
-    """绘制人格随时间演化曲线"""
-    if not history:
-        print("警告：历史数据为空，无法绘制演化图。")
-        return
-
-    steps = list(range(len(history)))
-    plt.figure(figsize=(12, 6))
-    
-    for dim in PERSONALITY_DIMS:
-        # 安全提取数据，防止某个维度缺失
-        values = [h.get(dim, 0.0) if isinstance(h, dict) else getattr(h, dim, 0.0) for h in history]
-        plt.plot(steps, values, label=dim, linewidth=2)
+    # [2. 主循环]
+    for step in range(steps):
+        # 执行模拟一步
+        model.step()
         
-    plt.title("村民人格随时间演化")
-    plt.xlabel("模拟年份")
-    plt.ylabel("维度平均值 (-1~1)")
-    plt.legend(loc='best')
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.show()
+        # 每 10 步保存一次可视化快照
+        if step % 10 == 0:
+            current_step_num = model.current_step
+            print(f"年份：{current_step_num:3d} | 正在保存可视化快照...")
+            
+            # 调用具体的绘图函数
+            visualize.draw_network(model, current_step_num)
+            visualize.draw_personality_distribution(model, current_step_num)
+            visualize.draw_social_indices(model, current_step_num)
+            
+            # 打印简要进度
+            norm = model.get_community_norm()
+            c_score = norm.get('尽责性C', 0.0)
+            rel_count = model.history['relation_count'][-1]
+            print(f"       -> 平均尽责性: {c_score:.2f}, 当前关系数: {rel_count}")
+
+    # [3. 最后画：人格演化趋势图]
+    print("正在生成全程人格演化趋势图...")
+    visualize.draw_personality_trend(model)
+    
+    print("=== 模拟完成 ===")
+    print(f"所有结果已保存至 ./{output_dir}/ 目录")
+    print("文件列表:")
+    print("  - network_step_X.png      (社会网络快照)")
+    print("  - personality_dist_step_X.png (人格分布快照)")
+    print("  - social_indices_step_X.png   (社会指标快照)")
+    print("  - personality_trend.png   (全程演化趋势)")
+
+if __name__ == "__main__":
+    run_simulation()

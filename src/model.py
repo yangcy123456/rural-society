@@ -1,7 +1,6 @@
-print("开始加载 model.py") 
+print("开始加载 src/model.py")
 
 from mesa import Model
-# Mesa 4.0 不再需要导入 RandomActivation 或任何 Scheduler
 from src.agent import Villager
 from src.network import RelationNetwork
 from src.utils.yaml_loader import config
@@ -15,11 +14,23 @@ class RuralVillageModel(Model):
         super().__init__()
         self.num_villagers = NUM_VILLAGERS
         
-        # Mesa 4.0: 不需要创建 schedule 对象
-        # 所有的 agent 会自动添加到 self.agents 集合中
-        self.network = RelationNetwork()
+        # 初始化网络
+        self.network = RelationNetwork(self)
+        
+        # 初始化历史数据收集器
+        self.history = {
+            'mean_personality': [],
+            'std_personality': [],
+            'relation_count': []
+        }
+        
+        # 初始化步数计数器 (用于图片命名和进度追踪)
+        self.current_step = 0
         
         self._create_villagers()
+        
+        # 收集初始状态 (Step 0)
+        self._collect_data()
 
     def _create_villagers(self):
         """初始化所有村民"""
@@ -33,48 +44,65 @@ class RuralVillageModel(Model):
                 age=np.random.randint(0, 70),
                 family=family
             )
-            # Mesa 4.0: 实例化即自动注册到 self.agents，无需 schedule.add()
             
             self.network.add_villager(villager)
             
-            # 自动添加家族内部关系
-            # 注意：此时 villager 刚加入，可能需要确保 network 能正确获取最新列表
-            family_members = self.network.get_family_members(family)
-            for member_id in family_members:
-                if member_id != i:
-                    self.network.add_relation(i, member_id, "家族", 0.8)
-
-    def get_family_personality(self, family):
-        """获取某家族的平均人格（用于儿童期继承）"""
-        # Mesa 4.0: 直接使用 self.agents
-        # self.agents 是一个 AgentSet，可以直接迭代
-        family_agents = [a for a in self.agents if a.family == family and a.age > 30]
-        
-        if not family_agents:
-            return {dim: 0.0 for dim in PERSONALITY_DIMS}
-        
-        mean_personality = {}
-        for dim in PERSONALITY_DIMS:
-            mean_personality[dim] = np.mean([a.personality[dim] for a in family_agents])
-        return mean_personality
+            # 自动添加家族内部关系 (在 add_villager 中已部分处理，这里确保显式添加或补充)
+            # 注意：add_villager 内部已经加了家族边，这里不需要重复加，除非逻辑分离
+            # 为保险起见，依赖 network.py 中的 add_villager 逻辑即可
+            
+        # [重要] 所有村民添加完毕后，初始化随机邻居关系
+        self.network.initialize_random_neighbors(probability=0.3)
 
     def get_community_norm(self):
-        """获取全村平均人格（用于青少年期规范）"""
-        # 直接使用 self.agents
+        """获取全村平均人格"""
         mean_personality = {}
+        all_values = {dim: [] for dim in PERSONALITY_DIMS}
+        
+        # Mesa 4.0 兼容：处理 agents 可能是 dict 或 list
+        agents_list = list(self.agents.values()) if isinstance(self.agents, dict) else list(self.agents)
+        
+        for agent in agents_list:
+            if hasattr(agent, 'personality'):
+                for dim in PERSONALITY_DIMS:
+                    val = agent.personality.get(dim, 0.0)
+                    all_values[dim].append(val)
+        
         for dim in PERSONALITY_DIMS:
-            # 确保 agent 有 personality 属性
-            values = [a.personality[dim] for a in self.agents if hasattr(a, 'personality')]
-            if values:
-                mean_personality[dim] = np.mean(values)
-            else:
-                mean_personality[dim] = 0.0
+            mean_personality[dim] = np.mean(all_values[dim]) if all_values[dim] else 0.0
         return mean_personality
 
-    def step(self):
-        """模拟一步（一年）"""
-        # Mesa 4.0 核心变化：使用 agents.do("step") 替代 schedule.step()
-        # 这会自动按随机顺序调用所有 agent 的 step() 方法
-        self.agents.do("step")
+    def _collect_data(self):
+        """收集当前步的数据到 history"""
+        current_norm = self.get_community_norm()
+        mean_vec = [current_norm[dim] for dim in PERSONALITY_DIMS]
+        
+        std_vec = []
+        agents_list = list(self.agents.values()) if isinstance(self.agents, dict) else list(self.agents)
+        
+        for dim in PERSONALITY_DIMS:
+            values = [a.personality.get(dim, 0.0) for a in agents_list if hasattr(a, 'personality')]
+            std_vec.append(np.std(values) if len(values) > 1 else 0.0)
+        
+        relation_count = len(self.network.G.edges()) if hasattr(self.network, 'G') else 0
+            
+        self.history['mean_personality'].append(mean_vec)
+        self.history['std_personality'].append(std_vec)
+        self.history['relation_count'].append(relation_count)
 
-print("完成加载 model.py")
+    def step(self):
+        """
+        模拟一步（一年）
+        逻辑：执行Agent -> 收集数据 -> 计数器+1
+        (绘图逻辑已移至 main.py 以控制频率)
+        """
+        # 1. 执行所有 Agent 的 step
+        self.agents.do("step")
+        
+        # 2. 收集本步最新数据
+        self._collect_data()
+        
+        # 3. 更新步数计数器
+        self.current_step += 1
+
+print("完成加载 src/model.py")
