@@ -1,0 +1,27 @@
+PERSONALITY_DIMS:
+  - 尽责性C
+  - 宜人性A
+  - 神经质N
+  - 外倾性E
+  - 开放性O
+
+SOCIAL_CLASSES:
+  - 核心大户
+  - 中等人家
+  - 小家庭
+  - 底层户
+
+NUM_VILLAGERS: 150
+SIMULATION_STEPS: 100
+
+# --- 新增/补全的权重参数 ---
+
+# 儿童期：继承父母人格的权重 (0.0 - 1.0)
+CHILD_PARENT_WEIGHT: 0.6
+
+# 青少年期：受社区规范影响的权重 (0.0 - 1.0)
+TEEN_COMMUNITY_WEIGHT: 0.3
+
+# 成年期：人格稳定衰减率 (0.0 - 1.0)
+# 含义：每年保留 (1 - rate) 的人格特征。例如 0.05 表示每年保留 95%，微调 5%。
+ADULT_STABLE_RATE: 0.05
